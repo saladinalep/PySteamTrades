@@ -77,7 +77,7 @@ class MailSender(QObject):
                 server.starttls(context=context)
             if self.username != '':
                 server.login(self.username, self.password)
-            server.sendmail(self.sender, self.recipient, self.message)
+            server.sendmail(self.sender, self.recipient, self.message.encode("utf8"))
         except Exception as e:
             logging.error('Error sending email: ' + str(e))
             self.error.emit('Error sending email: ' + str(e))
