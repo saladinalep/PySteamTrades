@@ -160,7 +160,10 @@ class PrefsDialog(QDialog):
         self.ui.encryptionComboBox.setCurrentText(s.value('email/encryption_type'))
 
         self.ui.usernameLineEdit.setText(s.value('email/username'))
-        self.ui.passwordLineEdit.setText(keyring.get_password(sysName,  "email/password"))
+        try:
+            self.ui.passwordLineEdit.setText(keyring.get_password(sysName,  "email/password"))
+        except Exception as e:
+            logging.warning('Cannot read password from keyring: ' + str(e))
     def selectFile(self):
         filename, _ = QFileDialog.getSaveFileName(self, 'Log file name', self.ui.logfileLineEdit.text(), "Log file (*.log);;All files(*.*)")
         if filename:
@@ -205,8 +208,10 @@ class PrefsDialog(QDialog):
         s.setValue('email/encryption_type',  self.ui.encryptionComboBox.currentText())
 
         s.setValue('email/username',  self.ui.usernameLineEdit.text())
-        keyring.set_password(sysName,  "email/password", self.ui.passwordLineEdit.text())
-
+        try:
+            keyring.set_password(sysName,  "email/password", self.ui.passwordLineEdit.text())
+        except Exception as e:
+            logging.error('Cannot save password to keyring: ' + str(e))
         super().accept()
 
 class Handler(QObject, logging.Handler):
@@ -387,7 +392,12 @@ class MainWindow(QMainWindow):
                     smtpPort = s.value('email/port')
                     encryption = s.value('email/encryption_type') if s.value('email/encrypt', False, type=bool) else ''
                     username = s.value('email/username') if s.value('email/login', False, type=bool) else ''
-                    password = keyring.get_password(sysName,  "email/password") if s.value('email/login', False, type=bool) else ''
+                    password = ''
+                    try:
+                        if s.value('email/login', False, type=bool):
+                            password = keyring.get_password(sysName,  "email/password")
+                    except Exception as e:
+                        logging.warning('Cannot read password from keyring: ' + str(e))
                     mailSender = MailSender(sender, recipient, smtpServer, smtpPort, encryption, username, password,\
                     messageTemplate.format(sender = sender,  recipient = recipient, count = messageCount.text, author = author, message = message))
                     logging.info('sending email...')
