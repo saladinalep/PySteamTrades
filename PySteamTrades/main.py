@@ -4,7 +4,7 @@ import sys, smtplib, ssl, keyring, os, logging, time
 from bs4 import BeautifulSoup
 from PyQt5.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMenu, QAction, QDialog, QFileDialog
 from PyQt5.QtGui import QIcon, QTextCursor, QIntValidator
-from PyQt5.QtCore import QUrl, QTimer, QSettings, QThread, QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QUrl, QTimer, QSettings, QObject, QRunnable, QThreadPool, pyqtSignal
 from PySteamTrades.Ui_MainWindow import *
 from PySteamTrades.Ui_PrefsDialog import *
 from PySteamTrades.Ui_TestDialog import *
@@ -43,12 +43,10 @@ To: {recipient}
 PySteamTrades test message
 """
 
-# this will hold orphaned mail threads so they are not destroyed while running
-orphaned = []
-
-class MailSender(QObject):
+class Emitter(QObject):
     error = pyqtSignal(str)
-    finished = pyqtSignal()
+
+class MailSender(QRunnable):
     def __init__(self, sender, recipient, smtpServer, smtpPort, encryption,\
     username, password, message, debug = False):
         super().__init__()
@@ -61,10 +59,9 @@ class MailSender(QObject):
         self.password = password
         self.message = message
         self.debug = debug
-    @pyqtSlot()
+        self.emitter = Emitter()
     def run(self):
         server = None
-        ret = True
         try:
             context = ssl.create_default_context()
             if self.encryption == 'SSL':
@@ -80,17 +77,12 @@ class MailSender(QObject):
             server.sendmail(self.sender, self.recipient, self.message.encode("utf8"))
         except Exception as e:
             logging.error('Error sending email: ' + str(e))
-            self.error.emit('Error sending email: ' + str(e))
-            ret = False
-
+            self.emitter.error.emit('Error sending email: ' + str(e))
         try:
             if server:
                 server.quit()
         except:
             pass
-
-        self.finished.emit()
-        return ret
 
 class TestDialog(QDialog):
     newMessage = pyqtSignal(str)
@@ -100,22 +92,14 @@ class TestDialog(QDialog):
         self.ui.setupUi(self)
         self.mailSender = mailSender
         self.newMessage.connect(self.logMessage)
-        self.thread = QThread()
-        self.thread.started.connect(self.mailSender.run)
-        self.mailSender.finished.connect(self.thread.quit)
-        self.mailSender.error.connect(self.logMessage)
-        self.mailSender.moveToThread(self.thread)
+        self.mailSender.emitter.error.connect(self.logMessage)
     def showEvent(self, event):
         super().showEvent(event)
         # redirect stderr to self.write, to capture debug output of sendmail
         self.stderr = sys.stderr
         sys.stderr = self
-        self.thread.start()
+        QThreadPool.globalInstance().start(self.mailSender)
     def closeEvent(self, event):
-        if not self.thread.isFinished():
-            logging.debug('Email test thread running... adding to orphaned')
-            orphaned.append(self.thread)
-            self.thread = None
         sys.stderr = self.stderr
         event.accept()
     def write(self, message):
@@ -234,8 +218,6 @@ class MainWindow(QMainWindow):
         self.latestLink = ''
         self.quitting = False
         self.error.connect(self.showError)
-        self.mailThread = None
-        self.lastSend = None
         # Logger
         self.fileHandler = None
         self.handler = Handler()
@@ -357,15 +339,6 @@ class MainWindow(QMainWindow):
 
         self.trayIcon.setIcon(unreadIcon)
         self.setWindowIcon(unreadIcon)
-        if self.mailThread != None and not self.mailThread.isFinished():
-            elapsed = time.time() - self.lastSend
-            if elapsed < 60:
-                logging.debug('still trying to send email after {} seconds'.format(int(elapsed)))
-                return
-            else:
-                logging.debug('email thread still running after {} seconds... moving on'.format(int(elapsed)))
-                orphaned.append(self.mailThread)
-                self.mailThread = None
         try:
             latest = None
             for tm in soup.find_all('div', attrs={'class': 'comment_inner'}):
@@ -401,15 +374,9 @@ class MainWindow(QMainWindow):
                     mailSender = MailSender(sender, recipient, smtpServer, smtpPort, encryption, username, password,\
                     messageTemplate.format(sender = sender,  recipient = recipient, count = messageCount.text, author = author, message = message))
                     logging.info('sending email...')
-                    self.mailSender = mailSender
-                    self.mailThread = QThread()
-                    self.mailThread.started.connect(self.mailSender.run)
-                    self.mailSender.finished.connect(self.mailThread.quit)
-                    self.mailSender.error.connect(self.showError)
-                    self.mailSender.error.connect(self.resetLatest)
-                    self.mailSender.moveToThread(self.mailThread)
-                    self.lastSend = time.time()
-                    self.mailThread.start()
+                    mailSender.emitter.error.connect(self.showError)
+                    mailSender.emitter.error.connect(self.resetLatest)
+                    QThreadPool.globalInstance().start(mailSender)
                 self.latestLink = latestLink
         except Exception as e:
             logging.error(str(e))
