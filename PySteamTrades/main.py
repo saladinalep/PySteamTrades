@@ -31,7 +31,7 @@ To: {recipient}
 
 You have {count} new message(s)
 
-Latest message from {author}:
+New message from {author}:
 {message}
 """
 
@@ -44,11 +44,11 @@ PySteamTrades test message
 """
 
 class Emitter(QObject):
-    error = pyqtSignal(str)
+    error = pyqtSignal(str, str)
 
 class MailSender(QRunnable):
     def __init__(self, sender, recipient, smtpServer, smtpPort, encryption,\
-    username, password, message, debug = False):
+    username, password, message, permalink = '', debug = False):
         super().__init__()
         self.sender = sender
         self.recipient = recipient
@@ -58,6 +58,7 @@ class MailSender(QRunnable):
         self.username = username
         self.password = password
         self.message = message
+        self.permalink = permalink
         self.debug = debug
         self.emitter = Emitter()
     def run(self):
@@ -77,7 +78,7 @@ class MailSender(QRunnable):
             server.sendmail(self.sender, self.recipient, self.message.encode("utf8"))
         except Exception as e:
             logging.error('Error sending email: ' + str(e))
-            self.emitter.error.emit('Error sending email: ' + str(e))
+            self.emitter.error.emit('Error sending email: ' + str(e), self.permalink)
         try:
             if server:
                 server.quit()
@@ -158,7 +159,7 @@ class PrefsDialog(QDialog):
         self.ui.encryptionComboBox.currentText() if self.ui.encryptionGroupBox.isChecked() else '',\
         self.ui.usernameLineEdit.text() if self.ui.loginGroupBox.isChecked() else '',\
         self.ui.passwordLineEdit.text() if self.ui.loginGroupBox.isChecked() else '',\
-        testTemplate.format(sender = self.ui.senderLineEdit.text(),  recipient = self.ui.recipientLineEdit.text()), True)
+        testTemplate.format(sender = self.ui.senderLineEdit.text(),  recipient = self.ui.recipientLineEdit.text()), '', True)
         testDialog = TestDialog(self,  mailSender)
         testDialog.exec_()
     def accept(self):
@@ -213,9 +214,8 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.setWindowIcon(readIcon)
-        # permalink of last encountered unread message
-        # we notify the user when this has changed
-        self.latestLink = ''
+        # permalinks of comments we already notified the user of
+        self.permalinks = []
         self.quitting = False
         self.error.connect(self.showError)
         # Logger
@@ -313,9 +313,10 @@ class MainWindow(QMainWindow):
         d.exec_()
     def showError(self, message):
         self.trayIcon.showMessage('', message, QSystemTrayIcon.Warning)
-    def resetLatest(self):
-        # This is called on email errors. Reset latestLink so we try sending again later
-        self.latestLink = ''
+    def onMailError(self, msg, permalink):
+        self.showError(msg)
+        if permalink in self.permalinks:
+            self.permalinks.remove(permalink)
     def checkPage(self,  page):
         url = self.ui.webView.url()
         self.statusBar().showMessage(url.toString())
@@ -330,7 +331,6 @@ class MainWindow(QMainWindow):
             return
         messageCount = soup.find('span', attrs={'class': 'message_count'})
         if not messageCount:
-            self.latestLink = ''
             self.trayIcon.setIcon(readIcon)
             self.setWindowIcon(readIcon)
             return
@@ -340,44 +340,42 @@ class MainWindow(QMainWindow):
         self.trayIcon.setIcon(unreadIcon)
         self.setWindowIcon(unreadIcon)
         try:
-            latest = None
-            for tm in soup.find_all('div', attrs={'class': 'comment_inner'}):
-                if tm.find('div', attrs={'class': 'comment_unread'}) != None:
-                    latest = tm
+            parsed = 0
+            for comment in soup.find_all('div', attrs={'class': 'comment_inner'}):
+                if parsed >= int(messageCount.text):
                     break
-            if latest == None:
-                logging.error('no unread messages were found')
-                return
-            author = latest.find('a', attrs={'class': 'author_name'}).text.strip()
-            message = latest.find('div', attrs={'class': 'comment_body_default markdown'}).text.strip()
-            latestLink = latest.find_all('a')[-1]
-            if self.latestLink != latestLink:
-                logging.debug('latest comment: \n' + str(latest))
-                logging.debug('author: ' + author)
-                logging.debug('message: \n' + message)
-                logging.debug('perma_link:' + str(latestLink))
-                self.trayIcon.showMessage("New message from " + author,  message)
-                s = QSettings(orgName, appName)
-                if s.value('email/notify', False, type=bool):
-                    sender = s.value('email/sender')
-                    recipient =s.value('email/recipient')
-                    smtpServer = s.value('email/host')
-                    smtpPort = s.value('email/port')
-                    encryption = s.value('email/encryption_type') if s.value('email/encrypt', False, type=bool) else ''
-                    username = s.value('email/username') if s.value('email/login', False, type=bool) else ''
-                    password = ''
-                    try:
-                        if s.value('email/login', False, type=bool):
-                            password = keyring.get_password(sysName,  "email/password")
-                    except Exception as e:
-                        logging.warning('Cannot read password from keyring: ' + str(e))
-                    mailSender = MailSender(sender, recipient, smtpServer, smtpPort, encryption, username, password,\
-                    messageTemplate.format(sender = sender,  recipient = recipient, count = messageCount.text, author = author, message = message))
-                    logging.info('sending email...')
-                    mailSender.emitter.error.connect(self.showError)
-                    mailSender.emitter.error.connect(self.resetLatest)
-                    QThreadPool.globalInstance().start(mailSender)
-                self.latestLink = latestLink
+                if comment.find('div', attrs={'class': 'comment_unread'}) == None:
+                    continue
+                parsed += 1
+                author = comment.find('a', attrs={'class': 'author_name'}).text.strip()
+                message = comment.find('div', attrs={'class': 'comment_body_default markdown'}).text.strip()
+                permalink = comment.find_all('a')[-1]['href']
+                if permalink not in self.permalinks:
+                    logging.debug('unread comment: \n' + str(comment))
+                    logging.debug('author: ' + author)
+                    logging.debug('message: \n' + message)
+                    logging.debug('permalink:' + permalink)
+                    self.trayIcon.showMessage("New message from " + author,  message)
+                    s = QSettings(orgName, appName)
+                    if s.value('email/notify', False, type=bool):
+                        sender = s.value('email/sender')
+                        recipient =s.value('email/recipient')
+                        smtpServer = s.value('email/host')
+                        smtpPort = s.value('email/port')
+                        encryption = s.value('email/encryption_type') if s.value('email/encrypt', False, type=bool) else ''
+                        username = s.value('email/username') if s.value('email/login', False, type=bool) else ''
+                        password = ''
+                        try:
+                            if s.value('email/login', False, type=bool):
+                                password = keyring.get_password(sysName,  "email/password")
+                        except Exception as e:
+                            logging.warning('Cannot read password from keyring: ' + str(e))
+                        mailSender = MailSender(sender, recipient, smtpServer, smtpPort, encryption, username, password,\
+                        messageTemplate.format(sender = sender,  recipient = recipient, count = messageCount.text, author = author, message = message), permalink)
+                        logging.info('sending email...')
+                        mailSender.emitter.error.connect(self.onMailError)
+                        QThreadPool.globalInstance().start(mailSender)
+                    self.permalinks.append(permalink)
         except Exception as e:
             logging.error(str(e))
             self.error.emit(str(e))
