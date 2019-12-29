@@ -235,7 +235,7 @@ class MainWindow(QMainWindow):
         minimizeAction = QAction("Mi&nimize",  self)
         minimizeAction.triggered.connect(self.hide)
         restoreAction = QAction("&Restore",  self)
-        restoreAction.triggered.connect(self.showNormal)
+        restoreAction.triggered.connect(self.show)
         trayMenu = QMenu(self)
         trayMenu.addAction(minimizeAction)
         trayMenu.addAction(restoreAction)
@@ -304,7 +304,7 @@ class MainWindow(QMainWindow):
         if self.isVisible():
             self.hide()
         else:
-            self.showNormal()
+            self.show()
     def showPrefs(self):
         d = PrefsDialog(self)
         d.intervalChanged.connect(self.updateInterval)
