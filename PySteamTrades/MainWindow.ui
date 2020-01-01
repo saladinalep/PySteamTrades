@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>887</width>
-    <height>565</height>
+    <width>1117</width>
+    <height>731</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -26,7 +26,34 @@
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayout">
         <item>
+         <widget class="QLineEdit" name="urlLineEdit">
+          <property name="readOnly">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QWebEngineView" name="webView" native="true"/>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tradesTab">
+       <attribute name="title">
+        <string>&amp;Trades</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_4">
+        <item>
+         <widget class="QTreeView" name="treeView"/>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="bookmarksTab">
+       <attribute name="title">
+        <string>Book&amp;marks</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_5">
+        <item>
+         <widget class="QTreeView" name="bookmarksTreeView"/>
         </item>
        </layout>
       </widget>
@@ -53,7 +80,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>887</width>
+     <width>1117</width>
      <height>22</height>
     </rect>
    </property>
@@ -65,7 +92,15 @@
     <addaction name="refreshAction"/>
     <addaction name="quitAction"/>
    </widget>
+   <widget class="QMenu" name="menu_View">
+    <property name="title">
+     <string>&amp;View</string>
+    </property>
+    <addaction name="zoomInAction"/>
+    <addaction name="zoomOutAction"/>
+   </widget>
    <addaction name="menu_File"/>
+   <addaction name="menu_View"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="quitAction">
@@ -90,6 +125,22 @@
    </property>
    <property name="shortcut">
     <string>F5</string>
+   </property>
+  </action>
+  <action name="zoomInAction">
+   <property name="text">
+    <string>Zoom &amp;in</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+=</string>
+   </property>
+  </action>
+  <action name="zoomOutAction">
+   <property name="text">
+    <string>Zoom &amp;out</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+-</string>
    </property>
   </action>
  </widget>

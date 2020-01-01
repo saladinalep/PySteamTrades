@@ -71,7 +71,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     # the pyqtwebengine requirement is handled when compiling ui files
     # and pywin32 when creating the desktop shortcut on Windows
-    install_requires=['keyring', 'bs4'],
+    install_requires=['keyring', 'bs4', 'tendo'],
     cmdclass = {'compile_ui': CompileUiCommand, 'build_py': BuildPyCommand, 'install': InstallCommand},
     package_data={'': ['*.ico'],},
     classifiers=[
